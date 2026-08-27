@@ -1,7 +1,7 @@
 # ctx-flow
 
-A token-frugal development framework for Claude Code, shipped as a `.claude`
-folder.
+A token-frugal development framework for Claude Code, shipped as the contents
+of a `.claude` folder — this repo *is* the folder; mount it as one.
 
 The premise: **the main thread should hold decisions, and everything else should
 hold output.** Build logs, search results, page snapshots and ticket records are
@@ -11,10 +11,10 @@ durable ledger so the main thread's context survives `/clear` and `/compact`.
 
 ## Install
 
-Make this folder your project's `.claude` directory — copy it, or symlink it:
+Make this repo your project's `.claude` directory — copy it, or symlink it:
 
 ```bash
-ln -s /path/to/context-flow/.claude /path/to/your-project/.claude
+ln -s /path/to/context-flow /path/to/your-project/.claude
 ```
 
 For linked git worktrees, symlink the main worktree's `.claude` into each one;
@@ -311,7 +311,7 @@ session it exists to help.
 ## Layout
 
 ```
-.claude/
+context-flow/               mounted as your project's .claude
 ├── CLAUDE.md               the routing discipline — loads every session
 ├── settings.json           hook registration
 ├── agents/                 runner, verifier, architect, browser, tracker
