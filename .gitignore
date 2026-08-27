@@ -1,0 +1,9 @@
+# machine-local: libraryPath is an absolute path into ~/.cache/ctx-flow
+sgconfig.yml
+
+# session-local permissions — never ship
+.claude/settings.local.json
+
+# this repo's own dev memory: SessionStart injects LEDGER.md, so committing it
+# would load our notes into every adopter's session
+.claude/notes/
