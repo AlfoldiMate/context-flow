@@ -95,7 +95,7 @@ re-running the build.
 
 For a language not already in the registry, the script prints a `LEARNED:` line.
 Propose it for `.claude/scripts/grammars.nu` — `/checkpoint` decides whether it
-lands, same gate as any playbook learning. Include the expando char and any
+lands, same gate as any proposed learning. Include the expando char and any
 `--subdir`, because those are the two facts nobody rediscovers cheaply.
 
 ## Report

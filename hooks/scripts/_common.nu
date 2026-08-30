@@ -71,10 +71,12 @@ export def slug [b: string]: nothing -> string {
     | default --empty "detached"
 }
 
-# {root, ledger, branch, state} — split by LIFETIME, not by location. The
-# durable half is shared repo-wide so it survives branch merges and worktree
-# churn; the volatile half is per branch so one branch's in-flight state is
-# never another's noise. `state` is null on a detached HEAD.
+# {root, ledger, branch, state, tag} — root and tag serve the live flow (the
+# .claude/notes artifact dropbox and the agmem branch tag, one slug rule for
+# the hook that announces it and the /checkpoint that writes it); ledger and
+# state are the LEGACY file locations, still resolved so /agmem import can find
+# what a pre-agmem checkout wrote. `state` and `tag` are null on a detached
+# HEAD.
 export def paths [p: record]: nothing -> record {
     let cwd = cwd-of $p
     let root = shared-root $cwd
@@ -87,14 +89,17 @@ export def paths [p: record]: nothing -> record {
         state: (if $branch == null { null } else {
             $root | path join $NOTES_REL "state" $"((slug $branch)).md"
         })
+        tag: (if $branch == null { null } else { $"branch:(slug $branch)" })
     }
 }
 
-# Warning text when the worktree layout strands durable memory, or null when
-# the layout is sound. Memory resolves through `shared-root` — the main
-# worktree, or with a bare repo the directory holding the bare git dir — so a
-# `.claude` inside a linked worktree is never consulted: if the resolved root
-# has no `.claude`, /checkpoint writes where no session ever reads.
+# Warning text when the worktree layout strands the shared .claude, or null
+# when the layout is sound. The framework and the .claude/notes artifact
+# dropbox resolve through `shared-root` — the main worktree, or with a bare
+# repo the directory holding the bare git dir — so a `.claude` that exists only
+# inside one linked worktree has diverged from the copy every other worktree
+# shares. (Durable memory itself lives in agmem, keyed off the same shared git
+# dir, so it is immune to this — the stakes here are profiles and artifacts.)
 export def layout-check [cwd: string]: nothing -> any {
     let top = git-out $cwd rev-parse "--show-toplevel"
     if ($top | is-empty) { return null }                                # not in a work tree
@@ -102,11 +107,10 @@ export def layout-check [cwd: string]: nothing -> any {
     if ($root | path expand) == ($top | path expand) { return null }    # the main worktree itself
     if ($root | path join ".claude" | path exists) { return null }      # follows symlinks by design
     if not ($top | path join ".claude" | path exists) { return null }   # no .claude anywhere — nothing stranded
-    ($"WORKTREE LAYOUT MISMATCH: durable memory resolves to ($root)/.claude/notes, but "
-        + $"($root)/.claude does not exist — the .claude inside this worktree is never consulted "
-        + "for the ledger, so /checkpoint would write where nothing reads. Fix: keep the real "
-        + ".claude in the shared root and symlink it into each worktree "
-        + "(`bare-worktree apply` does this). /ctx-flow-doctor explains the layout.")
+    ($"WORKTREE LAYOUT MISMATCH: ($root)/.claude does not exist, but this worktree carries its "
+        + "own .claude — in this layout the real .claude lives at the shared root and is "
+        + "symlinked into each worktree, so profiles and the .claude/notes artifact dropbox "
+        + "stay one copy. Fix: `bare-worktree apply`. /ctx-flow-doctor explains the layout.")
 }
 
 # --- tunables ------------------------------------------------------------

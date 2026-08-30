@@ -33,12 +33,45 @@ const COMMON = path self "../hooks/scripts/_common.nu"
 use $GRAMMARS *
 use $COMMON [layout-check]
 
-# In a linked worktree, durable memory resolves to the shared root — verify a
-# .claude actually exists there, or checkpoints land where nothing reads.
+# agmem's version string under-reports (a build can carry space derivation
+# while still saying 0.1.0), so probe behaviour, not the version: --doctor
+# logs the space it derived for this directory. A binary without derivation
+# lands every project in the literal space `default` — silently, collapsing
+# per-project memory into one bucket, which is why this row exists.
+def agmem-row []: nothing -> record {
+    let bins = try { which -a agmem } | default []
+    if ($bins | is-empty) {
+        return { dep: "agmem", status: "MISSING", detail: ""
+            fix: "brew install AlfoldiMate/tap/agmem; then: claude mcp add --scope user agmem -- agmem" }
+    }
+
+    let r = try { ^agmem --doctor | complete }
+    let m = ($"($r.stdout? | default '')\n($r.stderr? | default '')"
+        | parse -r 'space=(?<s>[A-Za-z0-9_-]+)')
+    let space = if ($m | is-empty) { "" } else { $m | first | get s }
+    let extra = if ($bins | length) > 1 { $", ($bins | length) binaries on PATH" } else { "" }
+
+    if $space == "" {
+        { dep: "agmem", status: "BROKEN", detail: "--doctor reports no space"
+          fix: "run `agmem --doctor` by hand and read its log" }
+    } else if $space == "default" and ($env.PWD | path basename) != "default" {
+        { dep: "agmem", status: "STALE", detail: $"derived space: default($extra)"
+          fix: ("no space derivation — needs >= v0.1.1: brew upgrade agmem, and check "
+              + "`which -a agmem` for a stale duplicate earlier on PATH") }
+    } else {
+        { dep: "agmem", status: "ok", detail: $"space=($space)($extra)"
+          fix: (if $extra == "" { "" } else {
+              "keep one binary — `which -a agmem`; a stale extra silently loses space derivation" }) }
+    }
+}
+
+# In a linked worktree, the framework and the .claude/notes artifact dropbox
+# resolve to the shared root — verify a .claude actually exists there, or
+# subagent artifacts land where nothing reads.
 def layout-row []: nothing -> record {
     let broken = try { layout-check $env.PWD }
     if $broken == null {
-        { dep: "worktree layout", status: "ok", detail: "memory root reachable", fix: "" }
+        { dep: "worktree layout", status: "ok", detail: "shared .claude reachable", fix: "" }
     } else {
         { dep: "worktree layout", status: "BROKEN", detail: "", fix: $broken }
     }
@@ -74,6 +107,7 @@ def main []: nothing -> nothing {
             "npm i -g playwright-cli   # https://github.com/microsoft/playwright-cli")
         (dep "rtk" true (probe rtk "--version") "brew install rtk")
         (rtk-hook-row)
+        (agmem-row)
         (layout-row)
         (dep "acli" false (probe acli "--version") "https://developer.atlassian.com/cloud/acli/ — only needed for Jira")
     ]

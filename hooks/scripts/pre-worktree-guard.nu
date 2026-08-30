@@ -2,7 +2,7 @@
 # PreToolUse(Bash): in a bare-worktree layout, raw `git worktree add/remove/
 # move` skips everything the layout depends on — profile application, the
 # root-.claude symlink, the state manifest — so the worktree comes up without
-# its env files or memory, and `which`/`discard` no longer tell the truth.
+# its env files or framework, and `which`/`discard` no longer tell the truth.
 # The deny routes to the framework script instead. Outside a bare layout the
 # hook stays silent: a plain repo has no profiles to skip, and read-only
 # subcommands (list, prune, lock) pass everywhere.

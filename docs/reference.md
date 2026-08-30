@@ -1,7 +1,7 @@
 # ctx-flow reference
 
-Loaded only when needed. Covers return contracts, dispatch prompts, the ledger
-format, playbook rationale, and where MCP servers fit.
+Loaded only when needed. Covers return contracts, dispatch prompts, the memory
+mapping, playbook rationale, and where MCP servers fit.
 
 ## Why return contracts matter
 
@@ -61,76 +61,49 @@ Independent agents in a single message run concurrently. Good fan-out axes:
 Bad fan-out: several agents on the same question hoping one gets it right. That
 costs N prefixes for one answer. Use `verifier` on the single answer instead.
 
-## Memory layout
+## Memory mapping
 
-Two files, split by **lifetime**. Both are injected at every session start, so
-both compete with real context — prune ruthlessly. A stale ledger is worse than
-no ledger.
+Durable state lives in agmem. The space derives from the parent of the repo's
+shared git dir (`git rev-parse --git-common-dir`), so every branch and linked
+worktree of a project resolves to one store — bare layouts included, and a
+fresh worktree is **not** amnesiac. `user` is the reserved cross-project space
+for facts about the person rather than the project. The store sits under the
+home directory, so none of this is a git or gitignore question.
 
-| File | Holds | Lifetime | Cap |
-|---|---|---|---|
-| `<main worktree>/.claude/notes/LEDGER.md` | Goal, Map, Gotchas, architectural decisions | outlives the branch | ~150 lines |
-| `<main worktree>/.claude/notes/state/<branch>.md` | Done, Next, Blocked, in-flight decisions | dies with the branch | ~60 lines |
+The lifetime split the two files used to carry maps onto kinds and decay:
 
-The durable file resolves through `git rev-parse --git-common-dir`, which points
-at the one real `.git` from anywhere in the repo. That makes it shared by every
-linked worktree — a fresh worktree is **not** amnesiac — and it holds whether
-the worktree's `.claude` is a symlink to the main worktree's or its own
-directory: both resolve to the same files.
+| Was | Becomes | Why it fits |
+|---|---|---|
+| `LEDGER.md` decisions, Map entries, corrected assumptions | `fact` | fades over weeks unless recalled — an unused fact retires itself |
+| `LEDGER.md` Gotchas | `lesson` | fades over months; recall keeps the ones that earn it alive |
+| a rule binding every future session | `instruction` | pinned, lands in every `context` briefing — be sparing |
+| `state/<branch>.md` Done/Next/Blocked | `fact`, `decay_class: fast`, tag `branch:<slug>` | dies in days, as branch state should, with no file to prune |
+| verbatim ground truth (an error transcript, a requirement stated exactly) | `episode` on the same `remember` call | every claim stays provenanced to the text it came from |
 
-Deciding which file an entry belongs in: **would this still be true after the
-branch merges?** Yes → ledger. No → branch state. When unsure, the ledger — a
-wrong entry there gets pruned, a lost one is gone.
+The slug in `branch:<slug>` comes from `hooks/scripts/ctx-flow-paths.nu`
+(`TAG=`) — the same resolver behind the SessionStart nudge, so the write side
+and the read side cannot drift.
 
-Git tracking is optional. If the repo tracks `.claude/`, commit `LEDGER.md` and
-gitignore `notes/state/` — durable knowledge is worth sharing with anyone who
-clones. If `.claude/` is gitignored or symlinked, memory works identically from
-disk; you only lose the diff-review layer, and the checkpoint gate (below)
-carries the scrutiny instead. When writing a `.gitignore` rule, use `.claude/*`
-rather than `.claude/` — git does not descend into an excluded directory, so
-`!` negations under `.claude/` would be silently dead.
+Writing well is `/checkpoint`'s job, and its order matters: distil → `recall`
+the topic → `remember`, with `supersedes` carrying the id of anything now
+stale → read the reply's `duplicates` and `related` before reporting. The
+store refuses near-duplicates and never rewrites text, so repeated
+checkpoints are idempotent and history survives correction — `inspect` shows
+any claim's chain and source, and `recall` with `as_of` replays what was
+believed at any past instant.
 
-### LEDGER.md
-
-```markdown
-# Ledger — <project>
-
-## Goal
-<what we're actually trying to achieve, 1-3 lines — outlives any single task>
-
-## Decisions
-- 2026-08-26 — chose X over Y because <reason that isn't obvious from the code>
-
-## Map
-- path/to/thing — what it is and why you'd open it
-
-## Gotchas
-- <the thing that cost an hour and would cost it again>
-```
-
-### state/<branch>.md
-
-```markdown
-# <branch>
-
-## State
-- Done: <shipped and verified>
-- Next: <the immediate next action>
-- Blocked: <what's stuck and on what>
-
-## In flight
-- <decision made for this branch only, with its reason>
-```
-
-What does **not** go in either: anything git records, anything the code says
-plainly, anything true only for the current turn. Absolute dates, never
-"yesterday".
+What does **not** go in the store: anything git records, anything the code
+says plainly, anything true only for the current turn — and artifacts. Long
+tool output goes under `.claude/notes/` with the path returned; agmem holds
+claims, not blobs.
 
 ## Staying ahead of compaction
 
 No hook can call `/clear` — the harness owns session control flow, so a fully
 automatic checkpoint-clear-reload does not exist. The loop is manual by one
-step: `/checkpoint`, `/clear`, and `SessionStart` reloads both files.
+step: `/checkpoint`, `/clear`, and the fresh session's first
+`mcp__agmem__context` call (the `SessionStart` hook reminds you, every time)
+brings the briefing back.
 
 Take the checkpoint at a **seam in the work**, not at a token count. A decision
 made, an assumption corrected, a subsystem understood — those are what a fresh
@@ -144,72 +117,59 @@ worth writing down.
 
 Leave auto-compaction enabled as a backstop. Disabling it entirely
 (`DISABLE_AUTO_COMPACT`) trades a lossy summary for a hard `prompt_too_long`
-failure, which is worse. `PreCompact` stamps the ledger with a running count
-when it fires, so "this keeps happening" is visible rather than silent.
+failure, which is worse. When it fires, the SessionStart restart warning names
+it — and a session that keeps seeing that warning is a session checkpointing
+too late.
 
 ## Playbooks: knowledge that accumulates
 
-### Why not a skill
+### Why not a skill, and why not files
 
 A skill is a file plus a description line in the always-loaded listing. That line
 exists so the model can *discover* the skill — and the listing goes to everything
 holding the `Skill` tool, subagents included. Role-specific knowledge needs no
-discovery: the agent definition already names the file. Making it a skill would
-therefore charge every subagent for knowledge only one of them ever reads.
+discovery: the agent definition names its own `role:<agent>` tag, and the recall
+costs nothing until that agent actually runs. (The same reasoning is why the
+routing rules themselves moved from a skill into `CLAUDE.md`: rules that apply
+to every session shouldn't need discovering, and rules that need discovering
+sometimes aren't discovered.)
 
-So: plain markdown at `.claude/playbooks/<role>.md`, named by the agent that
-reads it. (The same reasoning is why the routing rules themselves moved from a
-skill into `CLAUDE.md`: rules that apply to every session shouldn't need
-discovering, and rules that need discovering sometimes aren't discovered.)
+The file version — `.claude/playbooks/<role>.md` — is retired: tags give the
+same role-scoping inside the store, and most of the guards a self-updating file
+needed are the store's native behaviour.
 
 ### The guards, and why each exists
 
 Self-improving memory fails silently. The playbook drifts subtly wrong,
 everything downstream degrades slightly, and nobody notices because nobody reads
-the file any more. The guards, each against a specific failure:
+it any more. The guards, each against a specific failure:
 
 | Failure | Guard |
 |---|---|
-| Append-only growth — the playbook becomes the token problem it was solving | Cap 60 lines. Merge, never append. |
-| Overfitting — "ALWAYS check X" from one weird bug, taxed forever | Evidence threshold: twice, or once at real cost. |
-| Unverified claims compound — a guess becomes load-bearing three sessions later | Provenance: date + evidence on every entry. |
-| No negative signal — nothing reports a rule gone stale | `/playbook prune` re-checks entries against the repo. |
-| A rule loosens the role it was written for | Playbooks append, never override. The agent file wins on conflict. |
+| Append-only growth — the playbook becomes the token problem it was solving | Decay: a rule nothing recalls fades instead of taxing every future run; `/agmem tidy` merges what still accumulates. |
+| Overfitting — "ALWAYS check X" from one weird bug, taxed forever | Evidence threshold, applied at the `/checkpoint` gate: twice, or once at real cost. |
+| Unverified claims compound — a guess becomes load-bearing three sessions later | Provenance: evidence inside the claim, `valid_from` dating it, `inspect` showing source and correction chain. |
+| No negative signal — nothing reports a rule gone stale | `consolidate` surfaces contradictions and stale claims for judgement; a wrong rule is closed by `supersedes`, keeping its history. |
+| A rule loosens the role it was written for | Recalled rules append, never override. The agent file wins on conflict. |
 
 And the structural one: **proposing is not committing.** Agents emit
 `LEARNED: <claim> — <evidence>`; `/checkpoint` decides. A haiku·low agent
-editing its own standing instructions is the failure mode in miniature. This
-gate is what makes self-updating files safe — git tracking, where the repo has
-it, is a second layer, not the load-bearing one, because `.claude/` may be
-gitignored or symlinked across worktrees and the framework must hold either way.
+editing its own standing instructions is the failure mode in miniature. The
+store lives outside git entirely, so this gate is not backed by a diff-review
+layer — it is the only scrutiny there is, which is exactly why it is the
+load-bearing one and why agents ship with read-only wiring.
 
-### Sections that earn their place
-
-`Rules` (imperative, dated), `Landmarks` (paths worth knowing), and `Dead ends` —
-the thing that looks right but isn't. Negative knowledge is what agents
-rediscover most expensively and record least often, and it is the section most
-worth keeping.
-
-An empty playbook is a fine outcome. Delete one that prunes to nothing rather
-than leaving an empty file, which reads as "checked, nothing here" — a claim you
-would be making falsely.
+Negative knowledge — the thing that looks right but isn't — is what agents
+rediscover most expensively and record least often. It makes the best
+`role:`-tagged lessons; phrase it as "X looks right here and is wrong because Y".
 
 ### Scripts vary by environment, not by self-edits
 
-A self-modifying script is far harder to review than a self-modifying markdown
-file, and its blast radius is larger. Code stays fixed; the only thing that
-varies per project or per session is an environment variable:
-
-| Env var | Default | Effect |
-|---|---|---|
-| `CTX_FLOW_LEDGER_MAX_LINES` | `400` | cap on the injected ledger |
-
-There used to be a config file under this, resolving **env > config > default**.
-It is gone. A config file makes a hook parse, validate, and fall back silently
-on malformed input — three new ways for a hook to break the session it exists to
-help — and every threshold it held was already reachable through the env var
-that overrode it. What genuinely varies by project is knowledge, and that
-belongs in a playbook where a human reads it.
+A self-modifying script is far harder to review than a self-updating claim
+store, and its blast radius is larger. Code stays fixed. There are currently no
+tunables at all: the last env var, `CTX_FLOW_LEDGER_MAX_LINES`, existed to
+bound file injection and died with the files. What genuinely varies by project
+is knowledge, and that lives in the store where `/agmem show` reads it.
 
 ## Where MCP servers fit
 
@@ -218,14 +178,18 @@ server wherever one exists: `gh` over the GitHub server, `acli` over Atlassian,
 `playwright-cli` over the Playwright server. You choose the fields, the output
 pipes, and no tool schema loads into any prompt.
 
-- **The one MCP server this framework wants is `nu --mcp`.** It earns the slot
-  because it is not a wrapper around a CLI — it *is* the shell, with structured
-  pipelines, `$history` for re-slicing past results without re-running, and
-  server-side truncation that makes uncapped first runs safe. Use it for
-  anything data-shaped and queryable; use plain `Bash` for simple side effects.
+- **This framework wants exactly two global servers.** `nu --mcp` earns its
+  slot because it is not a wrapper around a CLI — it *is* the shell, with
+  structured pipelines, `$history` for re-slicing past results without
+  re-running, and server-side truncation that makes uncapped first runs safe.
+  `agmem` earns its slot the same way: it *is* the memory — cross-session
+  state that must outlive every process, which no CLI invocation holds. Both
+  hold state; that is the test, and a stateless wrapper fails it.
 - **If a project genuinely needs another server** (brokered OAuth, a live
   stateful session no CLI exposes), scope it in that project's `.mcp.json`,
   never globally, and trim it with its capability flags — cutting a 90-tool
   server to 8 improves tool choice everywhere.
 - **Reach MCP results only from a dedicated agent.** They are the largest
-  objects in the system and the best delegation candidates you have.
+  objects in the system and the best delegation candidates you have. (agmem is
+  the exception by design: its replies are claims, already distilled, and the
+  shipped agents carry their own read-only wiring.)

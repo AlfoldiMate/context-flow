@@ -8,8 +8,8 @@ sgconfig.yml
 # session-local permissions — never ship
 settings.local.json
 
-# this repo's own dev memory: SessionStart injects LEDGER.md, so committing it
-# would load our notes into every adopter's session
+# this repo's own scratch dropbox (subagent artifacts, legacy pre-agmem
+# notes) — machine-local, never ship
 notes/
 
 # macOS noise

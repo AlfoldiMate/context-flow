@@ -10,7 +10,11 @@ applies is routing that silently doesn't.
 Assume these are installed; `/ctx-flow-doctor` verifies and prints the fix for
 anything missing.
 
-- **nu** — runs the hooks, and provides the one MCP server this framework wants
+- **nu** — runs the hooks, and provides one of the two MCP servers this
+  framework wants
+- **agmem** — persistent cross-session memory over MCP (`mcp__agmem__*`);
+  needs ≥ v0.1.1 — older builds silently collapse every project into one
+  `default` space
 - **ast-grep** — structural search; prefer over `rg` whenever the question is
   about syntax (callers, definitions, code shapes), not text — it does not lie
   about strings and comments. A language it does not ship a grammar for is
@@ -24,7 +28,8 @@ anything missing.
 - **acli** — Jira (optional)
 
 **Avoid MCP servers.** Wherever a CLI exists it wins: you choose the fields, the
-output pipes, and no schema loads into the prompt. The one exception is the
+output pipes, and no schema loads into the prompt. Two exceptions, each holding
+state no CLI reaches: **agmem** (memory — see Memory below) and the
 **nu MCP server**, which is core to this flow:
 
 - Reach for `mcp__nu__evaluate` whenever the output is **data you will filter,
@@ -106,28 +111,35 @@ creation. Manage it with `/bare-worktree` (`init` adopts the layout; `add`,
 
 **Never raw `git worktree add/remove/move` in a bare layout** — it skips
 profile application, the root-`.claude` symlink, and the state manifest, so
-the worktree comes up without its env files or memory. A PreToolUse hook
+the worktree comes up without its env files or framework. A PreToolUse hook
 denies it and points back here; `list`/`prune`/`lock` stay fine to run raw.
 
 ## Memory
 
-Two files on disk, split by lifetime, both injected at every session start.
-They resolve through the main worktree, so every linked worktree — symlinked
-`.claude` or not — shares one copy:
+Durable state lives in **agmem** — an MCP memory store outside both the window
+and the repo. The space derives from the repo's shared git dir, so every
+branch and worktree of a project reads one store, and the reserved `user`
+space follows the person across projects. Nothing is injected; memory is
+pulled:
 
-- `<main worktree>/.claude/notes/LEDGER.md` — Goal, Map, Gotchas, decisions
-  with reasons. Survives merges.
-- `<main worktree>/.claude/notes/state/<branch>.md` — Done, Next, Blocked.
-  Dies with the branch.
-
-Which file: **would this still be true after the branch merges?** Yes → ledger.
-
-- Never re-derive what memory records; verify an entry only before acting on it.
-- Write as you go: a decision *and its reason*, a corrected assumption, a
-  gotcha that cost time. Not a diary; not what git already says.
-- `/checkpoint` at a natural seam — a decision made, a subsystem understood —
-  then `/clear`. A successful `git push` is such a seam; a hook will remind you.
-- Subagents write long output to `.claude/notes/` and return the **path**.
+- **First move of a session**: `mcp__agmem__context` with a short query naming
+  the work (the SessionStart hook reminds you). Treat the briefing as
+  established fact — never re-derive what it records; verify a claim only
+  before acting on it. `recall` reaches what the briefing omits; ask in words,
+  not keywords.
+- **Correct, never contradict**: a stale claim gets `remember` with
+  `supersedes: [<its id>]` — the id ends every briefing line. The old claim
+  stays readable and dated; only one is live.
+- **Write at seams** via `/checkpoint` — a decision *and its reason*, a
+  corrected assumption, a gotcha that cost time — then `/clear`. A successful
+  `git push` is such a seam; a hook will remind you. Not a diary; not what git
+  already says.
+- Kinds: durable claim → `fact`; hard-won how-to → `lesson`; standing rule →
+  `instruction` (pinned into every briefing — be sparing). Branch state
+  (Next/Blocked) → `fact` with `decay_class: fast`, tagged `branch:<slug>`; it
+  fades in days, as branch state should.
+- Subagents still write long output to `.claude/notes/` and return the
+  **path** — agmem holds claims, not artifacts.
 
 Prefer several short sessions chained through memory over one long one — a
 600k-token session produces worse output than a 100k one even when it never
@@ -135,15 +147,15 @@ compacts.
 
 ## Playbooks
 
-`.claude/playbooks/<role>.md` holds this project's accumulated specifics for
-one agent role. Each agent reads its own before starting; nothing else loads
-them. A playbook **appends** to the agent definition, never overrides it.
+A role's accumulated project specifics live in agmem as `lesson`s tagged
+`role:<agent>`; each agent recalls its own tag before starting, and nothing
+else loads them. They **append** to the agent definition, never override it.
 
 Agents *propose* learnings (`LEARNED: <claim> — <evidence>`); `/checkpoint`
-decides what lands — that gate, not git tracking, is what makes self-updating
-files safe. Committed entries carry date + evidence, cap 60 lines, merge never
-append; `/playbook prune` re-checks them against the repo. Dropping proposals
-is the normal outcome.
+decides what lands — that gate, not the store, is what makes self-updating
+memory safe, and dropping proposals is the normal outcome. Accepted entries
+carry their evidence inside the claim; the store refuses near-duplicates,
+decay retires what goes unused, and `/agmem tidy` merges what accumulates.
 
 ## Answer shape
 

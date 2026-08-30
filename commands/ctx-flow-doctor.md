@@ -1,5 +1,5 @@
 ---
-description: Check that ctx-flow's dependencies are installed and working — nu, ast-grep, gh, playwright-cli, rtk, acli — and that ast-grep can parse this project. Reports exact fixes for anything broken.
+description: Check that ctx-flow's dependencies are installed and working — nu, ast-grep, gh, playwright-cli, rtk, agmem, acli — and that ast-grep can parse this project. Reports exact fixes for anything broken.
 allowed-tools: Bash, Read, Glob
 ---
 
@@ -15,18 +15,23 @@ It prints two tables: dependency status with a fix hint per missing row, and
 the project's top source extensions with which ast-grep grammar handles each —
 built in, `buildable →`, `unregistered →`, or `no grammar`.
 
-Then add the three checks a script cannot do well:
+Then add the four checks a script cannot do well:
 
 1. **nu MCP server registered?** You can tell from your own tool list: if the
    `mcp__nu__evaluate` tool is available in this session, it is registered and
    working. If not, the fix is
    `claude mcp add nu -- nu --mcp` (add `--scope project` to keep it per-repo).
-2. **Hooks live?** Confirm `.claude/settings.json` registers the SessionStart,
-   PreCompact, PostToolUse, and PreToolUse (rtk) hooks and that the three nu
+2. **agmem MCP server registered?** Same test: `mcp__agmem__context` in your
+   tool list means memory is live. If the binary row says ok but the tool is
+   absent, the fix is `claude mcp add --scope user agmem -- agmem`. A `STALE`
+   binary row matters more than it looks: without space derivation every
+   project reads and writes one shared `default` space, silently.
+3. **Hooks live?** Confirm `.claude/settings.json` registers the SessionStart,
+   PostToolUse, and PreToolUse (rtk + worktree guard) hooks and that the nu
    scripts exist at the paths it names. If `.claude` is a symlink, resolve it
    and confirm the target exists — a dangling symlink is the silent failure
    mode here.
-3. **ast-grep actually parses the main language.** Take the top extension from
+4. **ast-grep actually parses the main language.** Take the top extension from
    the second table, pick one file of it, and run a trivial pattern, e.g.
    `ast-grep run -p '$A' -l <lang> <file> | head -3`. A grammar listed is not a
    grammar that loads — and a pattern with a metavariable is the sharper test,

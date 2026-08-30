@@ -6,8 +6,10 @@ of a `.claude` folder — this repo *is* the folder; mount it as one.
 The premise: **the main thread should hold decisions, and everything else should
 hold output.** Build logs, search results, page snapshots and ticket records are
 the largest objects in any session and carry the least information per token.
-ctx-flow routes each of them into a subagent sized for the job, and keeps a
-durable ledger so the main thread's context survives `/clear` and `/compact`.
+ctx-flow routes each of them into a subagent sized for the job, and keeps
+durable memory in [agmem](https://github.com/AlfoldiMate/agmem) — a
+per-project MCP memory store — so the main thread's context survives `/clear`
+and `/compact`.
 
 ## Install
 
@@ -18,9 +20,9 @@ ln -s /path/to/context-flow /path/to/your-project/.claude
 ```
 
 For linked git worktrees, symlink the main worktree's `.claude` into each one;
-everything here is symlink-safe, and memory resolves through the main worktree
-regardless (`git rev-parse --git-common-dir`), so a fresh worktree is never
-amnesiac either way.
+everything here is symlink-safe, and agmem derives its memory space through
+the shared git dir regardless, so a fresh worktree is never amnesiac either
+way.
 
 Then verify the toolchain:
 
@@ -32,7 +34,8 @@ Then verify the toolchain:
 
 | Tool | Why | Install |
 |---|---|---|
-| [nu](https://www.nushell.sh) | runs the hooks; provides the one MCP server the framework wants | `brew install nushell` |
+| [nu](https://www.nushell.sh) | runs the hooks; provides one of the two MCP servers the framework wants | `brew install nushell` |
+| [agmem](https://github.com/AlfoldiMate/agmem) | persistent cross-session memory, over MCP | `brew install AlfoldiMate/tap/agmem` |
 | [ast-grep](https://ast-grep.github.io) | structural (syntax-aware) code search | `brew install ast-grep` |
 | [gh](https://cli.github.com) | GitHub — always over the GitHub MCP server | `brew install gh` |
 | [playwright-cli](https://github.com/microsoft/playwright-cli) | browser driving as shell commands | `npm i -g playwright-cli` |
@@ -41,14 +44,29 @@ Then verify the toolchain:
 | tree-sitter-cli *(optional)* | builds grammars ast-grep does not ship | `npm i -g tree-sitter-cli` |
 
 You do not have to *use* Nushell as your shell; the hooks run under `nu`
-regardless of what your terminal runs. Register the nu MCP server with
-`claude mcp add nu -- nu --mcp`.
+regardless of what your terminal runs. Register both MCP servers:
+
+```bash
+claude mcp add nu -- nu --mcp
+claude mcp add --scope user agmem -- agmem
+```
 
 **On MCP:** the framework avoids MCP servers — a CLI beats one wherever a CLI
-exists (you choose the fields, the output pipes, no schema in the prompt). The
-single exception is `nu --mcp`, which earns its slot by *being* the shell:
-structured pipelines, `$history` for re-slicing past results without
-re-running, safe uncapped first runs.
+exists (you choose the fields, the output pipes, no schema in the prompt). Two
+exceptions, each holding state no CLI reaches: `nu --mcp` earns its slot by
+*being* the shell (structured pipelines, `$history` for re-slicing past
+results without re-running, safe uncapped first runs), and `agmem` by *being*
+the memory — cross-session state that has to outlive every process.
+
+**On agmem:** it needs **v0.1.1 or newer**. Older builds have no space
+derivation, so every project silently reads and writes one shared `default`
+space — no error, just collapsed memory. `agmem --doctor` prints the space it
+derives for the current directory, and `/ctx-flow-doctor` flags a stale or
+duplicated binary. The store is one directory
+(`~/Library/Application Support/dev.agmem.agmem` on macOS,
+`~/.local/share/agmem` on Linux) — back it up or delete it as a unit. There is
+no server-side LLM: the session distils, the store never rewrites what it
+holds.
 
 **On rtk:** the framework's `settings.json` registers its hook (`rtk hook
 claude`) — install only the binary, and do **not** also run `rtk init -g`, or
@@ -94,14 +112,18 @@ does it. Route search there.
 
 ### Four commands
 
-- **`/checkpoint`** — writes durable state to the ledger so you can `/clear`
-  instead of letting auto-compaction fire; also the gate that accepts or drops
-  agents' proposed playbook learnings.
-- **`/ledger`** — `show`, `init`, or `prune` the two memory files.
-- **`/playbook`** — `show`, `init <role>`, or `prune` the agent playbooks.
-- **`/ctx-flow-doctor`** — checks every dependency above, the hooks, the nu
-  MCP registration, and whether ast-grep actually parses this project's
-  languages; prints the exact fix for anything broken.
+- **`/checkpoint`** — distils the session into agmem claims (recall first, so
+  corrections land as `supersedes`) so you can `/clear` instead of letting
+  auto-compaction fire; also the gate that accepts or drops agents' proposed
+  learnings.
+- **`/agmem`** — `show` what the store holds, `tidy` (judge `consolidate`'s
+  duplicate/contradiction/stale lists and merge via `supersedes`), or
+  `import` a pre-agmem `LEDGER.md`, branch state, and playbooks into the
+  store, once.
+- **`/ctx-flow-doctor`** — checks every dependency above, the hooks, both MCP
+  registrations, and whether ast-grep actually parses this project's
+  languages; prints the exact fix for anything broken — including a stale
+  agmem binary, which fails silently otherwise.
 - **`/ast-grep-it [lang]`** — teaches ast-grep a language it does not ship.
   Called bare, it sets up whatever this project most needs.
   ast-grep loads any tree-sitter grammar from a dynamic library, so "not
@@ -111,7 +133,7 @@ does it. Route search there.
   registers it in the project's `sgconfig.yml`, and verifies it against real
   files. `sgconfig.yml` is machine-local — gitignore it.
 
-### Four hooks
+### The hooks
 
 Deterministic work that costs zero tokens and happens *every* time, which no
 prompt instruction achieves. Three are `.nu` scripts under `hooks/scripts/`;
@@ -119,9 +141,8 @@ the fourth is rtk's.
 
 | Event | Does |
 |---|---|
-| `SessionStart` | injects both memory files — the repo ledger and the current branch's state — which is what makes `/clear` cheap; after a compaction (`source: "compact"`) it also warns that context was truncated and remembered line numbers are unreliable |
-| `PreCompact` | stamps the ledger with a running count, so silent context loss becomes a visible pattern |
-| `PreToolUse` | `rtk hook claude` — transparently rewrites Bash commands so their output arrives compressed |
+| `SessionStart` | points the session at agmem — memory is pull-based, so the hook's job is the deterministic reminder to call `mcp__agmem__context` first, with the current branch's tag pre-computed so recall and checkpoint agree on it; after a compaction (`source: "compact"`) it also warns that context was truncated and remembered line numbers are unreliable; with no agmem binary on PATH it says memory is offline instead |
+| `PreToolUse` | `rtk hook claude` — transparently rewrites Bash commands so their output arrives compressed; plus the bare-worktree guard that denies raw `git worktree add/remove/move` in a bare layout |
 | `PostToolUse` | two nudges, each fired at most once per session and neither able to block: after a successful `git push`, that a checkpoint seam has arrived; and when a Bash call reached for `sed`/`python` where nu is the house tool. The second exists because a rule in an always-loaded file is a rule you stop seeing — this repo`s own transcripts showed CLAUDE.md losing to habit on 18% of Bash calls |
 
 ### Where the rules live
@@ -168,9 +189,10 @@ tools: Read, mcp__postgres__*
 `mcpServers` takes inline definitions (same schema as `.mcp.json`; stdio and
 http/sse both work) or the bare name of an already-registered global server.
 Declaring the server does not grant its tools — list `mcp__<server>__*` (or
-individual `mcp__<server>__<tool>` entries) in `tools:` as well. The one
-server that stays global is `nu --mcp`: it is the shell, and every session
-wants the shell.
+individual `mcp__<server>__<tool>` entries) in `tools:` as well. Two servers
+stay global: `nu --mcp` (it is the shell, and every session wants the shell)
+and `agmem` (it is the memory — the main thread writes it, and every shipped
+agent declares read-only access to recall its own role's rules).
 
 ### Skills: who gets to see one
 
@@ -231,55 +253,59 @@ The levers, ordered from fully documented to verify-once:
 
 ## Memory
 
-Two files, split by **lifetime**, both reloaded at every session start:
+Durable state lives in **agmem**, outside both the window and the repo. The
+space derives from the repo's shared git dir — every branch and worktree of a
+project reads one store, and the reserved `user` space follows you across
+projects. This is the answer to "how do I keep context without keeping it in
+context": you don't hold it, you *address* it. The store holds the claims; the
+window is a working set.
 
-| File | Holds | Lifetime |
-|---|---|---|
-| `<main worktree>/.claude/notes/LEDGER.md` | Goal, Map, Gotchas, decisions with reasons | outlives the branch |
-| `<main worktree>/.claude/notes/state/<branch>.md` | Done, Next, Blocked | dies with the branch |
+The loop: `mcp__agmem__context` as the session's first move (the
+`SessionStart` hook reminds you, every time); `recall` before assuming;
+`/checkpoint` at seams — decisions with reasons, corrected assumptions,
+gotchas — with `recall` before every write so a correction lands as
+`supersedes` rather than a contradiction. The old claim stays readable and
+dated; only one is live. Three kinds carry the lifetime split the old
+ledger/state files used to: `fact` (fades over weeks unless used), `lesson`
+(fades over months), `instruction` (pinned into every briefing). Branch state
+is a `fact` with `decay_class: fast` tagged `branch:<slug>` — it dies in days,
+as branch state should, with no file to prune.
 
-Both resolve through `git rev-parse --git-common-dir`, so every linked worktree
-shares one copy — symlinked `.claude` or not, the same files are found. This is
-the answer to "how do I keep context without keeping it in context": you don't
-hold it, you *address* it. The filesystem is the store; the window is a working
-set.
+What agmem does **not** replace: `.claude/notes/` stays as the artifact
+dropbox — subagents write long output there and return the path. Claims go in
+the store; blobs go on disk.
 
 ## Playbooks — knowledge that accumulates
 
-`.claude/playbooks/<role>.md` holds a project's specifics for one agent role.
-Each agent reads its own before starting; nothing else loads them, so an unused
-playbook costs nothing. A playbook **appends** to its agent's definition and
-never overrides it; on conflict the agent file wins.
+A role's project specifics live in the store as `lesson`s tagged
+`role:<agent>`. Each shipped agent recalls its own tag before starting
+(read-only wiring, declared per agent); nothing else loads them, so an unused
+playbook costs nothing. Recalled rules **append** to the agent's definition
+and never override it; on conflict the agent file wins.
 
-They grow by accretion, under guards: cap 60 lines and merge-never-append
-(against unbounded growth); an evidence threshold of twice-or-once-at-real-cost
-(against overfitting); date + evidence on every entry (against unverified
-claims compounding); `/playbook prune` re-checks entries against the repo
-(against staleness).
-
-The structural guard is **proposing is not committing**: agents end with
-`LEARNED: <claim> — <evidence>`, and `/checkpoint` decides what lands. The
+The guards the file version needed are mostly the store's behaviour now:
+near-duplicates are refused at write time, unused rules fade by decay instead
+of accumulating, and `/agmem tidy` merges what still piles up. What remains
+yours is the structural guard: **proposing is not committing**. Agents end
+with `LEARNED: <claim> — <evidence>`, and `/checkpoint` applies the four
+tests (durable, non-obvious, earned, actionable) before anything lands. The
 agent proposing a rule is often the cheapest thing in the system, and rules
-bind every future run — dropping proposals is the normal outcome. This gate is
-what makes self-updating files safe. Scripts never self-modify at all; the one
-thing that varies is an environment variable.
+bind every future run — dropping proposals is the normal outcome. Scripts
+never self-modify at all.
 
 ## Git, gitignore, and worktrees
 
-The framework does not assume `.claude/` is tracked. Three setups all work:
+Memory is no longer a git question: the store lives under your home directory,
+not in the repo. What remains in `.claude/` is the framework itself plus
+`notes/`, the scratch dropbox — gitignore `notes/` (artifacts are
+machine-local). When you do write `.gitignore` rules for `.claude`, use
+`.claude/*` (contents), never `.claude/` (directory) — git will not descend
+into an excluded directory, so `!` negations under it would be silently dead.
 
-- **Tracked** — commit `LEDGER.md` and `playbooks/`, gitignore `notes/state/`.
-  You gain a review layer: a learning arrives as a diff someone can reject.
-  Use `.claude/*` (contents), never `.claude/` (directory), in `.gitignore` —
-  git will not descend into an excluded directory, so `!` negations under it
-  would be silently dead.
-- **Gitignored** — everything works from disk; memory is local to the clone.
-- **Symlinked into worktrees** — one `.claude` shared by all worktrees; memory
-  and playbooks converge on the same files the hooks already resolve to.
-
-In the untracked and symlinked setups a committed playbook rule binds every
-branch immediately — which is exactly why the checkpoint gate, not git, is
-where scrutiny lives.
+Worktrees need nothing shared for memory's sake: agmem derives one space per
+repo through the shared git dir, so even a raw worktree is not amnesiac. The
+`.claude` symlink convention (`/bare-worktree` manages it) is about the
+framework files and profiles, not memory.
 
 ## Staying ahead of compaction
 
@@ -287,26 +313,16 @@ No hook can call `/clear` — the harness owns session control flow. The loop:
 
 1. `/checkpoint` at a natural seam (a `git push` triggers a nudge automatically).
 2. `/clear`.
-3. `SessionStart` reloads both memory files.
+3. `SessionStart` points the fresh session at the store; its first
+   `mcp__agmem__context` call brings the briefing back.
 
 Leave auto-compaction enabled as the backstop — disabling it trades a lossy
-summary for a hard `prompt_too_long` failure. When it fires, `PreCompact`
-stamps the ledger, so "this keeps happening, checkpoint earlier" is visible
-rather than silent.
+summary for a hard `prompt_too_long` failure. When it fires, the restart
+warning says so, and memory is one `context` call away.
 
-Prefer several short sessions chained through the ledger over one long one. A
+Prefer several short sessions chained through memory over one long one. A
 600k-token session produces worse output than a 100k one even when it never
 compacts; the token saving is a side effect of the quality win.
-
-## Tuning
-
-Environment variables over built-in defaults, and nothing else — no config
-file, by design: a hook that parses config gains three new ways to break the
-session it exists to help.
-
-| Env var | Default | Effect |
-|---|---|---|
-| `CTX_FLOW_LEDGER_MAX_LINES` | `400` | cap on the injected ledger |
 
 ## Layout
 
@@ -315,14 +331,13 @@ context-flow/               mounted as your project's .claude
 ├── CLAUDE.md               the routing discipline — loads every session
 ├── settings.json           hook registration
 ├── agents/                 runner, verifier, architect, browser, tracker
-├── commands/               checkpoint, ledger, playbook, ctx-flow-doctor, ast-grep-it
-├── docs/reference.md       contracts, templates, rationale — loaded on demand
+├── commands/               checkpoint, agmem, ctx-flow-doctor, ast-grep-it, bare-worktree
+├── docs/reference.md       contracts, memory mapping, rationale — loaded on demand
 ├── hooks/scripts/          the three hooks + shared _common.nu + paths resolver
 ├── output-styles/          ctx-flow.md — the hard rules, appended to the system prompt
 ├── scripts/                doctor.nu + build-grammar.nu + grammars.nu registry
 ├── skills/nushell/         deep Nushell reference, loaded when writing nu
-├── playbooks/<role>.md     accumulates per project    (created by use)
-└── notes/                  LEDGER.md + state/<branch> (created by use)
+└── notes/                  subagent artifact dropbox   (created by use)
 ```
 
 MIT.

@@ -6,18 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "nu --stdin \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/session-start-ledger.nu\"",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "nu --stdin \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/precompact-stamp.nu\"",
+            "command": "nu --stdin \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/session-start-memory.nu\"",
             "timeout": 5
           }
         ]

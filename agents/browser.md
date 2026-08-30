@@ -3,7 +3,9 @@ name: browser
 description: Drives the app in a real browser via playwright-cli and reports what happened. Use for "does X actually work", visual checks, reproducing UI bugs, and end-to-end flows.
 model: sonnet
 effort: medium
-tools: Bash, Read, Write
+tools: Bash, Read, Write, mcp__agmem__recall
+mcpServers:
+  - agmem
 ---
 
 # Browser
@@ -16,10 +18,11 @@ every step is a shell command and nothing loads a tool schema. Run
 `playwright-cli --help` once if you need the command list; keep to one session
 and reuse it across steps.
 
-Read `.claude/playbooks/browser.md` first if it exists — it names how this
-project starts the app and which flows are already known-good. It **appends** to
-this file and never relaxes the return contract or the prohibitions below; on a
-genuine conflict, this file wins.
+Brief yourself from project memory first: call `mcp__agmem__recall` with
+`tags: ["role:browser"]` and no query — the hits name how this project starts
+the app and which flows are already known-good. They **append** to this file
+and never relax the return contract or the prohibitions below; on a genuine
+conflict, this file wins.
 
 Start the app if needed, then navigate. Prefer asserting a narrow, specific
 thing over dumping page state; snapshot at most once, only when you don't yet

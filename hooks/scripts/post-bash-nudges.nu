@@ -25,9 +25,11 @@
 const COMMON = path self "_common.nu"
 use $COMMON *
 
-const PUSH_NUDGE = ("git push succeeded — that is a checkpoint seam. Update the ledger and "
-    + "branch state now, as /checkpoint would: decisions with their reasons, corrected "
-    + "assumptions, Done/Next. Then continue, or suggest /clear if the task is finished.")
+const PUSH_NUDGE = ("git push succeeded — that is a checkpoint seam. Store the session's "
+    + "durable state in agmem now, as /checkpoint would: decisions with their reasons, "
+    + "corrected assumptions, branch state as fast-decay claims tagged branch:<slug>. Recall "
+    + "each topic before writing so corrections land as supersedes. Then continue, or suggest "
+    + "/clear if the task is finished.")
 
 # Anti-pattern -> the house alternative. Anchored to the start of a command or
 # to a separator, so a quoted mention (`grep 'sed -i' f`) does not trip it.
