@@ -58,9 +58,11 @@ exceptions, each holding state no CLI reaches: `nu --mcp` earns its slot by
 results without re-running, safe uncapped first runs), and `agmem` by *being*
 the memory — cross-session state that has to outlive every process.
 
-**On agmem:** it needs **v0.1.1 or newer**. Older builds have no space
+**On agmem:** it needs **v0.1.1 or newer** — older builds have no space
 derivation, so every project silently reads and writes one shared `default`
-space — no error, just collapsed memory. `agmem --doctor` prints the space it
+space; no error, just collapsed memory. **v0.1.2+** adds the one-shot
+`agmem context`, which upgrades the SessionStart hook from a reminder to
+actual briefing injection (v0.1.1 still works; the hook falls back). `agmem --doctor` prints the space it
 derives for the current directory, and `/ctx-flow-doctor` flags a stale or
 duplicated binary. The store is one directory
 (`~/Library/Application Support/dev.agmem.agmem` on macOS,
@@ -141,7 +143,7 @@ the fourth is rtk's.
 
 | Event | Does |
 |---|---|
-| `SessionStart` | points the session at agmem — memory is pull-based, so the hook's job is the deterministic reminder to call `mcp__agmem__context` first, with the current branch's tag pre-computed so recall and checkpoint agree on it; after a compaction (`source: "compact"`) it also warns that context was truncated and remembered line numbers are unreliable; with no agmem binary on PATH it says memory is offline instead |
+| `SessionStart` | injects the memory briefing — `agmem context` (one-shot since agmem 0.1.2) prints the same block the MCP tool assembles, so the hook pushes it into context before the first token, footer and branch tag included. Every miss degrades one step: an older binary or unreachable store falls back to the deterministic reminder to call `mcp__agmem__context` first, and no binary on PATH says memory is offline. After a compaction (`source: "compact"`) it also warns that context was truncated and remembered line numbers are unreliable |
 | `PreToolUse` | `rtk hook claude` — transparently rewrites Bash commands so their output arrives compressed; plus the bare-worktree guard that denies raw `git worktree add/remove/move` in a bare layout |
 | `PostToolUse` | two nudges, each fired at most once per session and neither able to block: after a successful `git push`, that a checkpoint seam has arrived; and when a Bash call reached for `sed`/`python` where nu is the house tool. The second exists because a rule in an always-loaded file is a rule you stop seeing — this repo`s own transcripts showed CLAUDE.md losing to habit on 18% of Bash calls |
 
@@ -260,8 +262,9 @@ projects. This is the answer to "how do I keep context without keeping it in
 context": you don't hold it, you *address* it. The store holds the claims; the
 window is a working set.
 
-The loop: `mcp__agmem__context` as the session's first move (the
-`SessionStart` hook reminds you, every time); `recall` before assuming;
+The loop: the briefing arrives with the session (the `SessionStart` hook
+injects `agmem context`'s block; call `mcp__agmem__context` yourself on a
+topic shift, or when no block opened the session); `recall` before assuming;
 `/checkpoint` at seams — decisions with reasons, corrected assumptions,
 gotchas — with `recall` before every write so a correction lands as
 `supersedes` rather than a contradiction. The old claim stays readable and

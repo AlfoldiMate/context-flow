@@ -14,7 +14,8 @@ anything missing.
   framework wants
 - **agmem** — persistent cross-session memory over MCP (`mcp__agmem__*`);
   needs ≥ v0.1.1 — older builds silently collapse every project into one
-  `default` space
+  `default` space; ≥ v0.1.2 lets the SessionStart hook inject the briefing
+  instead of nudging for it
 - **ast-grep** — structural search; prefer over `rg` whenever the question is
   about syntax (callers, definitions, code shapes), not text — it does not lie
   about strings and comments. A language it does not ship a grammar for is
@@ -119,14 +120,15 @@ denies it and points back here; `list`/`prune`/`lock` stay fine to run raw.
 Durable state lives in **agmem** — an MCP memory store outside both the window
 and the repo. The space derives from the repo's shared git dir, so every
 branch and worktree of a project reads one store, and the reserved `user`
-space follows the person across projects. Nothing is injected; memory is
-pulled:
+space follows the person across projects. The SessionStart hook *injects* the
+briefing (`agmem context`, one-shot since agmem 0.1.2), so a session starts
+with memory already in front of it:
 
-- **First move of a session**: `mcp__agmem__context` with a short query naming
-  the work (the SessionStart hook reminds you). Treat the briefing as
-  established fact — never re-derive what it records; verify a claim only
-  before acting on it. `recall` reaches what the briefing omits; ask in words,
-  not keywords.
+- **The briefing is established fact** — never re-derive what it records;
+  verify a claim only before acting on it. `recall` reaches what it omits; ask
+  in words, not keywords. Call `mcp__agmem__context` yourself when the topic
+  shifts, or when no briefing block opened the session (the hook then fell
+  back to this reminder).
 - **Correct, never contradict**: a stale claim gets `remember` with
   `supersedes: [<its id>]` — the id ends every briefing line. The old claim
   stays readable and dated; only one is live.
