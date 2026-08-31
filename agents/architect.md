@@ -6,6 +6,8 @@ effort: high
 tools: Read, Glob, Grep, Bash, mcp__agmem__recall, mcp__agmem__context
 mcpServers:
   - agmem
+skills:
+  - ast-grep
 ---
 
 # Architect

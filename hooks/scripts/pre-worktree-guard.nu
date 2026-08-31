@@ -37,7 +37,7 @@ def main []: any -> nothing {
             permissionDecisionReason: ("This project uses the bare-worktree layout: raw `git worktree "
                 + "add/remove/move` skips profile application, the root-.claude symlink, and the "
                 + "state manifest. Use the framework path instead: "
-                + "nu \"$CLAUDE_PROJECT_DIR/.claude/scripts/bare-worktree.nu\" add|remove|apply|which <args> "
+                + "nu \"${CLAUDE_PROJECT_DIR:-.}/.claude/scripts/bare-worktree.nu\" add|remove|apply|which <args> "
                 + "(worktree list/prune/lock are fine to run raw).")
         } } | to json -r)
     }

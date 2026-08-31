@@ -8,7 +8,7 @@ allowed-tools: Bash, Read, Glob
 Run the deterministic checks first and use their output as the report's spine:
 
 ```bash
-nu "$CLAUDE_PROJECT_DIR/.claude/scripts/doctor.nu"
+nu "${CLAUDE_PROJECT_DIR:-.}/.claude/scripts/doctor.nu"
 ```
 
 It prints two tables: dependency status with a fix hint per missing row, and

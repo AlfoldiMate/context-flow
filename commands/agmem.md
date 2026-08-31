@@ -44,7 +44,7 @@ Report what you merged, corrected, and expired, in at most five lines.
 One-time migration of pre-agmem file memory. Resolve the legacy paths:
 
 ```bash
-nu "$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/ctx-flow-paths.nu"
+nu "${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/scripts/ctx-flow-paths.nu"
 ```
 
 Then, for whichever of these exist — `LEDGER=`, every file under

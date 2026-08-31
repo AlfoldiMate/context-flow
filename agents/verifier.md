@@ -6,6 +6,8 @@ effort: high
 tools: Read, Glob, Grep, Bash, mcp__agmem__recall
 mcpServers:
   - agmem
+skills:
+  - ast-grep
 ---
 
 # Verifier

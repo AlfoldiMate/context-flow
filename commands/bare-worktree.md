@@ -11,7 +11,7 @@ interprets the result. The script is standalone nu — the layout, the profile
 format, and every subcommand are documented in its header comment:
 
 ```bash
-nu "$CLAUDE_PROJECT_DIR/.claude/scripts/bare-worktree.nu" $ARGUMENTS
+nu "${CLAUDE_PROJECT_DIR:-.}/.claude/scripts/bare-worktree.nu" $ARGUMENTS
 ```
 
 Run it from the directory the user means — subcommands resolve the layout from

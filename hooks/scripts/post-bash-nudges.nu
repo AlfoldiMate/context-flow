@@ -50,6 +50,15 @@ const IDIOMS = [
       + "unless given -r, where sed is always regex and this project's sources carry "
       + "$ { [ ? | on nearly every line. Both sed and python's str.replace exit 0 "
       + "having changed nothing when the pattern misses.")]
+
+    ["search-via-grep"
+     '(^|[;&] *)(rg|grep)\b'
+     ("This project routes structural questions — callers of a symbol, its "
+      + "definition, anything shaped like a pattern — through `ast-grep` (a Bash "
+      + "CLI), whose hit list does not match inside strings or comments the way "
+      + "`rg`/`grep` do; plain-text search is what `rg`/`grep` stay right for. "
+      + "Discovery like this is also the `scout` agent's job, so it need not land "
+      + "in the main thread at all.")]
 ]
 
 # Match a real push, not the word "push" inside a commit message or echo:

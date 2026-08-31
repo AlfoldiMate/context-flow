@@ -16,7 +16,7 @@ Target language and any flags: **$ARGUMENTS**.
 language that ast-grep cannot yet handle and sets it up:
 
 ```bash
-nu "$CLAUDE_PROJECT_DIR/.claude/scripts/build-grammar.nu"
+nu "${CLAUDE_PROJECT_DIR:-.}/.claude/scripts/build-grammar.nu"
 ```
 
 It ends in one of three states, all of them final: it built something, or every
@@ -62,7 +62,7 @@ is a monorepo whose `grammar.js` sits one level down (as
 ## 3. Build and register
 
 ```bash
-nu "$CLAUDE_PROJECT_DIR/.claude/scripts/build-grammar.nu" <lang> --repo <url> [--subdir <dir>]
+nu "${CLAUDE_PROJECT_DIR:-.}/.claude/scripts/build-grammar.nu" <lang> --repo <url> [--subdir <dir>]
 ```
 
 It clones to `~/.cache/ctx-flow/grammars`, compiles, and merges one entry into

@@ -16,7 +16,7 @@ Get the branch tag first — the same resolver the SessionStart nudge uses, so
 the two sides cannot drift:
 
 ```bash
-nu "$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/ctx-flow-paths.nu"
+nu "${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/scripts/ctx-flow-paths.nu"
 ```
 
 `TAG=` is the tag for branch-scoped claims (empty on a detached HEAD — then
