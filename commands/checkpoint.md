@@ -46,12 +46,21 @@ locations for `/agmem import`.
    claim yours contradicts, re-send with `supersedes` set to its id, or the
    live claim is still the wrong one.
 
-4. **Branch state.** What is done *and verified*, the immediate next action,
+4. **A conclusion you worked out goes through `reflect` instead.** If one of
+   your candidates is something you concluded *from* what step 2 returned —
+   the cause behind three separate failures, what a preference and a
+   constraint mean taken together — store that one with `reflect`: the
+   insight, and `derived_from` set to the ids you drew it from. Same write,
+   with the evidence attached, so a later session can check the conclusion
+   rather than take it on faith. Something you were simply told is not this;
+   it belongs in the batch above.
+
+5. **Branch state.** What is done *and verified*, the immediate next action,
    what is blocked on what — as `fact`s with `decay_class: fast` and the
    `TAG=` tag. They fade in days and are pruned automatically, which is the
    point: branch state should die with the branch.
 
-5. **Gate proposed learnings** (section below).
+6. **Gate proposed learnings** (section below).
 
 If `$ARGUMENTS` is non-empty, make sure that topic is covered explicitly.
 
